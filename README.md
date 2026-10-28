@@ -2,26 +2,33 @@
 
 A polished, local-first **browser-based 3D modeling editor**. Build scenes from primitive geometry, manipulate objects using 3D gizmos, adjust materials, create example furniture/product scenes, save locally, and export GLB/STL/JSON/PNG.
 
-**Status:** runnable research prototype / MVP source code. Core data tests pass. Full rendered-WebGL browser verification and deployment are **not yet complete** in the restricted authoring environment. The runtime loads pinned Three.js ES modules from jsDelivr; you need an internet connection for those modules and a recent WebGL2-enabled browser.
+**Status:** local vanilla Three.js prototype with automated Chromium/WebGL and export verification. Chrome/Chromium is the supported PR1 verification target; Firefox testing was waived by the owner. This is not a production release. React migration has not started. See [PR1 evidence](docs/browser-evidence.md).
 
-## Quick start (Windows / macOS / Linux)
+## Quick start
 
-Requires Node.js 20+ and internet access for the Three.js CDN.
+Use Node.js 24.19.0 (the tested version) and npm 11.9.0:
 
 ```bash
+npm ci
 npm run dev
 ```
 
-Then visit **http://localhost:5173** in Chrome or Edge. No `npm install` is necessary for this prototype; only built-in Node APIs and browser ESM are used.
-
-Run the test suite:
+The development server listens on port 5173. Three.js 0.180.0 and its addons load from the installed local package; the editor no longer requests CDN modules or external fonts. No API key is required. Development uses a local import map; `npm run build` creates a self-contained static production artifact in `dist/index.html`. Serve the checkout only in a trusted development environment.
 
 ```bash
 npm test
 npm run check
+npx playwright install --with-deps chromium
+npm run test:e2e
 ```
 
-Alternative Python server: `python -m http.server 5173` from the repository root.
+On this cloud machine, the existing system Chromium can run the suite without downloading a browser:
+
+```bash
+CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e -- --project=chromium
+```
+
+That system-browser override is explicit; CI uses the browsers matching the pinned Playwright runner. Browser installation needs `cdn.playwright.dev` network access. Screenshots, download samples, validator output and JSON results are written to `artifacts/`; the HTML report is in `playwright-report/`. CI uploads both reports and failure traces.
 
 ## Features implemented
 
@@ -56,7 +63,7 @@ Alternative Python server: `python -m http.server 5173` from the repository root
 ## Structure
 
 ```text
-index.html              Application shell and import map
+index.html              Application shell and local import map
 src/main.js             Three.js renderer, editor controls, browser interaction
 src/scene-core.mjs      Pure scene model, serialization, templates, prompt parser
 src/styles.css          Responsive visual design
@@ -70,8 +77,8 @@ docs/WORK_BRIEF.md      ChatGPT Work research/delegation assignment
 
 ## Current limitations
 
-- Browser/WebGL interaction **has not been verified end-to-end in the authoring environment** because local browser navigation and external CDN access were blocked. Do not describe this as production-validated.
-- The viewer needs the browser to load Three.js modules from the public CDN. For production, Codex should bundle/package dependencies locally with Vite.
+- Chromium software-WebGL interaction and exports are tested. Other browser engines, real GPU performance, assistive technology and real mobile-device qualification remain pending.
+- Dependencies are local and locked. The static build bundles them into `dist/index.html`; GitHub Pages publishes only `dist/`.
 - Only primitive + multi-object composition modeling, not true polygon sculpting, sculpt brushes or Boolean mesh operations.
 - No account sign-in, cloud sync, real-time collaboration, permissions, hosted storage, or AI inference.
 - For 3D printing, exported overlapping shells may need mesh repair/boolean union in a CAD tool.
@@ -79,8 +86,8 @@ docs/WORK_BRIEF.md      ChatGPT Work research/delegation assignment
 
 ## Roadmap
 
-1. Get current MVP running in real browser; add Playwright Chromium e2e tests and debug its WebGL render/export paths.
-2. Migrate to React 19 + TypeScript + Vite + React Three Fiber 9 with bundled dependencies and reproducible builds.
+1. Complete the remaining Work release gates using Chrome/Chromium as the owner-selected browser target.
+2. Consider the staged TypeScript/React migration only after the remaining Work quality gates; the current vanilla editor already has a reproducible static build.
 3. Add object hierarchy/groups, per-primitive dimensions, selection multi-select, boolean tools, import GLB, scene thumbnails, templates.
 4. Add authenticated projects and cloud persistence using FastAPI, Pydantic, PostgreSQL and object storage.
 5. Add **guardrailed AI text-to-parametric scene planner** with structured scene plans and operations, preview/undo; never run arbitrary LLM-produced scripts.
@@ -89,3 +96,9 @@ docs/WORK_BRIEF.md      ChatGPT Work research/delegation assignment
 ## Research, handoff, architecture
 
 See `docs/RESEARCH.md`, `docs/WORK_BRIEF.md`, `docs/CODEX_HANDOFF.md` and `docs/ARCHITECTURE.md`.
+
+## GitHub Pages
+
+`npm run build` produces a standalone editor (including Three.js and its license notice) with no runtime CDN dependency. `.github/workflows/pages.yml` runs Node and Chromium checks, builds the site, and deploys only `dist/` to GitHub Pages on pushes to main. React migration is not part of this publishing change.
+
+Projects are stored per browser origin. Export a JSON backup before moving from the downloaded HTML or development server to the hosted site, then use Open to import it.

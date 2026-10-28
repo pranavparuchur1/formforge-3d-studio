@@ -44,3 +44,34 @@ test('invalid imported projects are rejected', () => {
  assert.throws(()=>normalizeProject({no:'shapes'}),/not a FormForge project/);
  assert.throws(()=>makeObject('a','monkey'),/Unknown geometry/);
 });
+
+test('future versions reject without modifying input', () => {
+ const raw={version:999,objects:[]}; const before=JSON.stringify(raw);
+ assert.throws(()=>normalizeProject(raw),/Unsupported project version/);
+ assert.equal(JSON.stringify(raw),before);
+});
+test('huge imported ID suffix never controls arithmetic allocation', () => {
+ const p=normalizeProject({version:1,objects:[{id:'shape-999999999999999999999999999999999999',type:'box'}]});
+ for(let i=1;i<MAX_OBJECTS;i++) addShape(p);
+ assert.equal(new Set(p.objects.map(o=>o.id)).size,MAX_OBJECTS);
+ assert.ok(p.objects.every(o=>/^[a-zA-Z0-9_-]{1,64}$/.test(o.id)));
+});
+test('valid v1 history roundtrip preserves allocator and semantic state', () => {
+ const p=newDemoProject();addShape(p);duplicateShape(p,p.objects[0].id);
+ assert.deepEqual(restore(snapshot(p)),p);
+ assert.throws(()=>normalizeProject({version:1,objects:[{type:'unknown'}]}),/Unsupported object geometry/);
+});
+
+test('allocator ignores unsafe and near-overflow counters',()=>{
+ for(const counter of [Infinity,Number.MAX_SAFE_INTEGER,1e36]){
+  const p=emptyProject();p.counter=counter;addShape(p);addShape(p);
+  assert.equal(new Set(p.objects.map(o=>o.id)).size,2);
+ }
+});
+test('version 1 rejects lossy repair and retains caller input',()=>{
+ for(const patch of [{position:[101,0,0]},{rotation:[Infinity,0,0]},{scale:[0,1,1]},{metalness:'0.5'},{color:'red'},{visible:'false'},{id:'unsafe!'}]){
+  const raw={version:1,objects:[{...makeObject('valid'),...patch}]};const before=structuredClone(raw);
+  assert.throws(()=>normalizeProject(raw));assert.deepEqual(raw,before);
+ }
+ assert.throws(()=>normalizeProject({version:1,objects:[makeObject('same'),makeObject('same')]}),/unique safe/);
+});

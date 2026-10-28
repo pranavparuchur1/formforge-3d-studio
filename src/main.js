@@ -18,13 +18,15 @@ const ICONS = { box:'⬡', sphere:'●', cylinder:'▤', cone:'▲', torus:'◉'
 const STORE_KEY = 'formforge.project.v1';
 const MAX_HISTORY = 65;
 let project;
-try { project = restore(localStorage.getItem(STORE_KEY)); } catch { project = newDemoProject(); }
+let hasSavedProject=false;
+try { const raw=localStorage.getItem(STORE_KEY);project=raw?restore(raw):newDemoProject();hasSavedProject=!!raw; } catch { project = newDemoProject(); }
+if(hasSavedProject)$('save-marker').textContent='● Saved on this browser';
 let selectedId = null;
 let mode = 'translate';
 let scene, camera, renderer, orbit, gizmo, grid, exportParent;
 let history = [], future = [];
 let saveTimeout = null, toastTimeout = null, dragBefore = null;
-let isReady = false;
+let isReady = false, frameCount = 0, exportBusy = false, contextLost = false;
 const meshMap = new Map();
 const round = (n, count = 2) => Number(n.toFixed(count));
 const degrees = r => r * 180 / Math.PI;
@@ -39,9 +41,10 @@ function toast(message, type='info') {
 }
 function persist() {
   clearTimeout(saveTimeout);
+  $('save-marker').textContent='Saving…';
   saveTimeout = setTimeout(()=>{
-    try { localStorage.setItem(STORE_KEY, snapshot(project)); }
-    catch { toast('Browser storage is full. Export your project as JSON.', 'error'); }
+    try { localStorage.setItem(STORE_KEY, snapshot(project)); $('save-marker').textContent='● Saved on this browser'; }
+    catch { $('save-marker').textContent='Save failed · Export JSON'; toast('Browser storage is full. Export your project as JSON.', 'error'); }
   }, 180);
 }
 function mutate(action) {
@@ -55,7 +58,7 @@ function mutate(action) {
       persist();
     }
     return result;
-  } catch(err) { toast(err.message || 'Something went wrong.', 'error'); return null; }
+  } catch(err) { project=JSON.parse(before);syncAll();toast(err.message || 'Something went wrong.', 'error'); return null; }
 }
 function updateHistoryButtons() { el.undo.disabled = history.length===0;el.redo.disabled = future.length===0; }
 function undo() {
@@ -112,13 +115,12 @@ function createMesh(shape) {
   scene.add(mesh);meshMap.set(shape.id,mesh);return mesh;
 }
 function syncAll() {
-  if(!isReady) return;
   const keep=new Set(project.objects.map(o=>o.id));
   for(const [id,mesh] of meshMap) if(!keep.has(id)) {
     if(id===selectedId) gizmo.detach();
     scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();meshMap.delete(id);
   }
-  for(const obj of project.objects){
+  if(isReady) for(const obj of project.objects){
     let mesh=meshMap.get(obj.id);
     if(mesh && mesh.userData.geometryType!==obj.type){
       if(selectedId===obj.id)gizmo.detach();
@@ -163,11 +165,12 @@ function renderInspector() {
   el.rough.value=String(Math.round(shape.roughness*100));el.roughValue.textContent=`${el.rough.value}%`;
   for(const kind of ['position','rotation','scale']){
     const values=shape[kind];
+    if($(`transform-${kind}`).children.length){refreshTransformFields();continue;}
     $(`transform-${kind}`).innerHTML=values.map((n,i)=>`<div class="number-field"><label for="field-${kind}-${i}">${'XYZ'[i]}</label><input id="field-${kind}-${i}" data-transform="${kind}" data-index="${i}" type="number" step="0.1" value="${round(kind==='rotation'?degrees(n):n,1)}" aria-label="${kind} ${'XYZ'[i]}" /></div>`).join('');
   }
 }
-function refreshTransformFields() {
-  const shape=currentShape();if(!shape)return;
+function refreshTransformFields(mesh) {
+  const shape=mesh?{position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z],scale:mesh.scale.toArray()}:currentShape();if(!shape)return;
   for(const kind of ['position','rotation','scale']) for(let i=0;i<3;i++){
     const field=$(`field-${kind}-${i}`);
     if(field && document.activeElement!==field)field.value=round(kind==='rotation'?degrees(shape[kind][i]):shape[kind][i],1);
@@ -195,6 +198,7 @@ function focusSelected() {
   else frameAll();
 }
 function zoomToBounds(bounds){
+  if(!camera || !orbit)return;
   const center=bounds.getCenter(new THREE.Vector3()),sphere=bounds.getBoundingSphere(new THREE.Sphere());
   const distance=Math.max(sphere.radius*2.9,3.0);
   const direction=camera.position.clone().sub(orbit.target).normalize();
@@ -217,11 +221,16 @@ function download(content,mime,name){
 function safeFilename(){return (project.name.replace(/[^a-z0-9-_ ]/gi,'').trim().replace(/\s+/g,'-') || 'formforge-scene').slice(0,70).toLowerCase();}
 async function exportAs(type){
   el.exportMenu.classList.add('hidden');$('btn-export').setAttribute('aria-expanded','false');
+  if(exportBusy)return;
+  exportBusy=true;let group;
   try{
     if(type==='json'){download(JSON.stringify(project,null,2),'application/json',`${safeFilename()}.json`);toast('Editable project exported');return;}
-    if(type==='png'){renderer.render(scene,camera);download(await new Promise(resolve=>renderer.domElement.toBlob(resolve,'image/png')),'image/png',`${safeFilename()}.png`);toast('Viewport image exported');return;}
+    if(!isReady)throw new Error('3D unavailable. Export JSON or reload the editor.');
+    if(type==='png'){renderer.render(scene,camera);const blob=await new Promise(resolve=>renderer.domElement.toBlob(resolve,'image/png'));if(!blob)throw new Error('Could not capture PNG. Try again or export JSON.');download(blob,'image/png',`${safeFilename()}.png`);toast('Viewport image exported');return;}
     if(!project.objects.length){toast('Add objects before exporting', 'error');return;}
-    const group=getExportObject();
+    if(!project.objects.some(o=>o.visible))throw new Error('Show at least one object before exporting geometry.');
+    if(type==='stl' && !confirm('STL contains geometry only, with arbitrary units and no materials. Overlapping shells may need repair; printability is not guaranteed. Continue?'))return;
+    group=getExportObject();
     if(type==='glb'){
       const exporter=new GLTFExporter();
       const buffer=await exporter.parseAsync(group,{binary:true});
@@ -234,8 +243,8 @@ async function exportAs(type){
       download(stl,'model/stl',`${safeFilename()}.stl`);
       toast('STL exported · check manifold geometry before 3D printing');
     }
-    group.traverse(o=>{if(o.isMesh)o.material.dispose();});
-  }catch(err){console.error(err);toast(`Export failed: ${err.message}`, 'error');}
+  }catch(err){toast(`Export failed: ${err.message}`, 'error');}
+  finally{group?.traverse(o=>{if(o.isMesh)o.material.dispose();});exportBusy=false;}
 }
 function setupThree() {
   if(!document.createElement('canvas').getContext('webgl2'))throw new Error('WebGL 2 is unavailable.');
@@ -246,6 +255,14 @@ function setupThree() {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
   el.viewport.appendChild(renderer.domElement);
+  renderer.domElement.addEventListener('webglcontextlost',event=>{
+    event.preventDefault();contextLost=true;isReady=false;window.__formforgeReady=false;window.__formforgeFailed=true;
+    el.webglError.classList.remove('hidden');el.rendererState.textContent='CONTEXT LOST';$('live-state').textContent='3D unavailable';
+  });
+  renderer.domElement.addEventListener('webglcontextrestored',()=>{
+    contextLost=false;isReady=true;window.__formforgeReady=true;window.__formforgeFailed=false;syncAll();
+    renderer.render(scene,camera);frameCount++;el.webglError.classList.add('hidden');el.rendererState.textContent='WEBGL2';$('live-state').textContent='LIVE 3D';
+  });
   orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;orbit.dampingFactor=.08;orbit.minDistance=2;orbit.maxDistance=60;
   orbit.maxPolarAngle=Math.PI*.49;orbit.target.set(0,1,0);orbit.update();
   scene.add(new THREE.HemisphereLight('#d6e2ff','#58516a',2.1));
@@ -260,20 +277,27 @@ function setupThree() {
   gizmo.addEventListener('mouseDown',()=>{dragBefore=snapshot(project);});
   gizmo.addEventListener('objectChange',()=>{
     const shape=currentShape(),mesh=meshMap.get(selectedId);if(!shape||!mesh)return;
-    shape.position=mesh.position.toArray().map(n=>round(n,5));shape.rotation=[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(n=>round(n,5));
-    shape.scale=mesh.scale.toArray().map(n=>Math.max(.05,round(n,5)));
-    refreshTransformFields();
+    // Only the mesh is transient during the pointer gesture.
+    refreshTransformFields(mesh);
   });
   gizmo.addEventListener('mouseUp',()=>{
+    const shape=currentShape(),mesh=meshMap.get(selectedId);
+    if(dragBefore && shape && mesh){
+      const values={position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(n=>Math.atan2(Math.sin(n),Math.cos(n))),scale:mesh.scale.toArray()};
+      const valid=values.position.every(n=>Number.isFinite(n)&&Math.abs(n)<=100)&&values.scale.every(n=>Number.isFinite(n)&&n>=.05&&n<=40);
+      if(valid){Object.assign(shape,values);}else toast('Transform outside bounds: position ±100, scale 0.05–40.', 'error');
+    }
     if(dragBefore && dragBefore!==snapshot(project)){
       history.push(dragBefore);if(history.length>MAX_HISTORY)history.shift();future=[];persist();updateHistoryButtons();
     }
-    dragBefore=null;
+    dragBefore=null;syncAll();
   });
   const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();let down=null;
-  renderer.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
+  renderer.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,gizmo:!!gizmo.axis || gizmo.dragging};});
+  renderer.domElement.addEventListener('pointercancel',()=>{down=null;if(dragBefore){project=JSON.parse(dragBefore);dragBefore=null;gizmo.reset();gizmo.dragging=false;orbit.enabled=true;syncAll();}});
   renderer.domElement.addEventListener('pointerup',e=>{
-    if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>5)return;
+    const start=down;down=null;
+    if(!start||start.gizmo||gizmo.dragging||e.button!==0||Math.hypot(e.clientX-start.x,e.clientY-start.y)>5)return;
     const rect=renderer.domElement.getBoundingClientRect();pointer.set((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);
     raycaster.setFromCamera(pointer,camera);
     const hits=raycaster.intersectObjects([...meshMap.values()].filter(m=>m.visible),false);
@@ -285,10 +309,11 @@ function setupThree() {
     camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix();renderer.setSize(rect.width,rect.height,false);
   };
   const observer=new ResizeObserver(resize);observer.observe(el.viewport);resize();
-  function animate(){requestAnimationFrame(animate);orbit.update();renderer.render(scene,camera);}
+  function animate(){requestAnimationFrame(animate);if(contextLost)return;orbit.update();renderer.render(scene,camera);frameCount++;}
   animate();
   isReady=true;window.__formforgeReady=true;$('viewport-placeholder').classList.add('hidden');
   syncAll();
+  renderer.render(scene,camera);frameCount++;$('live-state').textContent='LIVE 3D';el.rendererState.textContent='WEBGL2';
   return {renderer,observer};
 }
 function installHandlers(){
@@ -304,14 +329,16 @@ function installHandlers(){
   $('btn-duplicate').addEventListener('click',duplicateSelected);$('btn-delete').addEventListener('click',deleteSelected);
   $('inspector-duplicate').addEventListener('click',duplicateSelected);$('inspector-delete').addEventListener('click',deleteSelected);
   $('btn-frame').addEventListener('click',focusSelected);$('btn-reset-view').addEventListener('click',resetCamera);
-  el.gridButton.addEventListener('click',()=>{grid.visible=!grid.visible;el.gridButton.classList.toggle('active',grid.visible);toast(grid.visible?'Grid shown':'Grid hidden');});
+  el.gridButton.addEventListener('click',()=>{if(!grid)return;grid.visible=!grid.visible;el.gridButton.classList.toggle('active',grid.visible);toast(grid.visible?'Grid shown':'Grid hidden');});
   el.projectName.addEventListener('change',()=>mutate(()=>{project.name=el.projectName.value.trim().slice(0,100)||'Untitled exploration';}));
   el.objName.addEventListener('change',()=>mutate(()=>{const o=currentShape();if(o)o.name=el.objName.value.trim().slice(0,70)||'Object';}));
   for(const kind of ['position','rotation','scale']){
     $(`transform-${kind}`).addEventListener('change',e=>{
       const input=e.target.closest('input[data-transform]');if(!input)return;
       const index=Number(input.dataset.index),number=Number(input.value);
-      if(!Number.isFinite(number)){renderInspector();return;}
+      const min=kind==='scale'?.05:kind==='rotation'?-360:-100,max=kind==='scale'?40:kind==='rotation'?360:100;
+      if(input.value.trim()===''||!Number.isFinite(number)||number<min||number>max){input.setAttribute('aria-invalid','true');toast(`${kind} must be a number in [${min}, ${max}].`,'error');return;}
+      input.removeAttribute('aria-invalid');
       mutate(()=>{
         const obj=currentShape();if(!obj)return;
         obj[kind][index]=kind==='rotation'?Math.min(Math.PI*2,Math.max(-Math.PI*2,radians(number))):kind==='scale'?Math.max(.05,Math.min(40,number)):Math.max(-100,Math.min(100,number));
@@ -338,7 +365,9 @@ function installHandlers(){
     const file=el.fileInput.files?.[0];if(!file)return;
     try{
       if(file.size>2_000_000)throw new Error('Project file exceeds 2 MB');
-      const loaded=normalizeProject(JSON.parse(await file.text()));
+      const raw=JSON.parse(await file.text());
+      if(raw.version===undefined && !confirm('Legacy project has no version. Import may repair IDs, clamp values and omit unsupported geometry. Keep your original file as a backup. Continue?'))return;
+      const loaded=normalizeProject(raw);
       selectedId=null;mutate(()=>{project=loaded;});frameAll();toast(`Loaded ${project.objects.length} objects`);
     }catch(err){toast(err.message||'Could not open project','error');}
     finally{el.fileInput.value='';}
@@ -347,18 +376,18 @@ function installHandlers(){
     e.stopPropagation();el.exportMenu.classList.toggle('hidden');$('btn-export').setAttribute('aria-expanded',!el.exportMenu.classList.contains('hidden'));
   });
   el.exportMenu.addEventListener('click',e=>{const button=e.target.closest('[data-export]');if(button)exportAs(button.dataset.export);});
-  document.addEventListener('click',e=>{if(!e.target.closest('.export-wrap'))el.exportMenu.classList.add('hidden');});
+  document.addEventListener('click',e=>{if(!e.target.closest('.export-wrap')){el.exportMenu.classList.add('hidden');$('btn-export').setAttribute('aria-expanded','false');}});
   window.addEventListener('keydown',e=>{
     const typing=['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable;
     const cmd=e.ctrlKey||e.metaKey;
+    if(typing)return;
     if(cmd&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey)redo();else undo();return;}
     if(cmd&&e.key.toLowerCase()==='y'){e.preventDefault();redo();return;}
-    if(typing)return;
     if(e.shiftKey&&e.key.toLowerCase()==='d'){e.preventDefault();duplicateSelected();return;}
-    if(e.key==='Delete'||e.key==='Backspace'){deleteSelected();return;}
+    if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();if(!e.repeat)deleteSelected();return;}
     if(e.key==='1')setMode('translate');if(e.key==='2')setMode('rotate');if(e.key==='3')setMode('scale');
     if(e.key.toLowerCase()==='f')focusSelected();
-    if(e.key==='Escape'){select(null);el.exportMenu.classList.add('hidden');}
+    if(e.key==='Escape'){if(dragBefore){project=JSON.parse(dragBefore);dragBefore=null;gizmo.reset();gizmo.dragging=false;orbit.enabled=true;syncAll();return;}select(null);el.exportMenu.classList.add('hidden');$('btn-export').setAttribute('aria-expanded','false');}
     if(e.key==='/'){e.preventDefault();el.quickCommand.focus();}
   });
 }
@@ -374,4 +403,12 @@ function runQuickBuild(){
   el.quickCommand.value='';
 }
 installHandlers();
-try{setupThree();}catch(err){console.error('FormForge renderer error',err);el.webglError.classList.remove('hidden');el.rendererState.textContent='NO WEBGL';toast('3D renderer failed to start','error');}
+try{setupThree();}catch(err){window.__formforgeFailed=true;el.webglError.classList.remove('hidden');$('viewport-placeholder').classList.add('hidden');$('live-state').textContent='3D unavailable';el.rendererState.textContent='NO WEBGL';syncAll();toast('3D renderer failed to start','error');}
+// Read-only diagnostics: tests use UI events for every mutation.
+if(new URLSearchParams(location.search).has('diagnostics'))Object.defineProperty(window,'__formforgeDiagnostics',{value:()=>({
+  project:JSON.parse(snapshot(project)),selectedId,frameCount,history:history.length,future:future.length,
+  camera:camera?.position.toArray(),target:orbit?.target.toArray(),
+  meshes:[...meshMap.values()].map(m=>({id:m.userData.formforgeId,visible:m.visible,matrix:m.matrixWorld.toArray(),triangles:(m.geometry.index?.count ?? m.geometry.attributes.position.count)/3,min:new THREE.Box3().setFromObject(m,true).min.toArray(),max:new THREE.Box3().setFromObject(m,true).max.toArray(),bounds:new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3()).toArray()})),
+  renderer:renderer?.getContext().getParameter(renderer.getContext().RENDERER),
+  gizmo: gizmo?.object ? {position:gizmo.object.position.clone().project(camera).toArray(),axis:gizmo.axis,dragging:gizmo.dragging}:null,
+})});

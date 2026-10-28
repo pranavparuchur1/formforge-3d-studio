@@ -39,8 +39,12 @@ export function emptyProject(name = 'Untitled exploration') {
 
 export function addShape(project, type = 'box', overrides = {}) {
   if (project.objects.length >= MAX_OBJECTS) throw new Error(`A scene can have at most ${MAX_OBJECTS} objects.`);
-  const id = `shape-${project.counter++}`;
+  let counter = Number.isSafeInteger(project.counter) && project.counter > 0 && project.counter < Number.MAX_SAFE_INTEGER - MAX_OBJECTS ? project.counter : 1;
+  const used = new Set(project.objects.map(o => o.id));
+  while (used.has(`shape-${counter}`)) counter++;
+  const id = `shape-${counter}`;
   const shape = makeObject(id, type, overrides);
+  project.counter = counter + 1;
   project.objects.push(shape);
   return shape;
 }
@@ -54,11 +58,24 @@ export function duplicateShape(project, id) {
 
 export function normalizeProject(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.objects)) throw new Error('The file is not a FormForge project.');
+  if (raw.version !== undefined && raw.version !== PROJECT_VERSION) throw new Error(`Unsupported project version: ${raw.version}. Supported version: ${PROJECT_VERSION}.`);
   if (raw.objects.length > MAX_OBJECTS) throw new Error('This project contains too many objects.');
   const result = emptyProject(cleanText(raw.name, 'Imported scene', 100));
   const used = new Set();
   for (const item of raw.objects) {
-    if (!item || !TYPES.includes(item.type)) continue;
+    if (!item || !TYPES.includes(item.type)) {
+      if (raw.version === PROJECT_VERSION) throw new Error('Unsupported object geometry.');
+      continue;
+    }
+    if (raw.version === PROJECT_VERSION) {
+      if (typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.id) || used.has(item.id)) throw new Error('Object IDs must be unique safe strings (1–64 characters).');
+      for (const [kind,min,max] of [['position',-100,100],['rotation',-Math.PI*2,Math.PI*2],['scale',.05,40]]) {
+        if (item[kind] !== undefined && (!Array.isArray(item[kind]) || item[kind].length !== 3 || !item[kind].every(n=>typeof n === 'number' && Number.isFinite(n) && n>=min && n<=max))) throw new Error(`Invalid ${kind}: expected three finite numbers in [${min}, ${max}].`);
+      }
+      for (const key of ['metalness','roughness']) if (item[key] !== undefined && (typeof item[key] !== 'number' || !Number.isFinite(item[key]) || item[key]<0 || item[key]>1)) throw new Error(`Invalid ${key}: expected a number in [0, 1].`);
+      if (item.color !== undefined && (typeof item.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.color))) throw new Error('Invalid color: expected six-digit hex.');
+      if (item.visible !== undefined && typeof item.visible !== 'boolean') throw new Error('Invalid visibility: expected a boolean.');
+    }
     let id = cleanText(item.id, `shape-${result.counter}`);
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) id = `shape-${result.counter}`;
     while (used.has(id)) id = `shape-${++result.counter}`;
@@ -66,8 +83,9 @@ export function normalizeProject(raw) {
     result.objects.push(makeObject(id, item.type, item));
     result.counter++;
   }
-  const numericIds = result.objects.map(o => Number(o.id.match(/^shape-(\d+)$/)?.[1] || 0));
-  result.counter = Math.max(result.counter, ...numericIds.map(n => n + 1), 1);
+  // Imported suffixes are identifiers, never arithmetic inputs.
+  result.counter = Number.isSafeInteger(raw.counter) && raw.counter > 0 && raw.counter < Number.MAX_SAFE_INTEGER - MAX_OBJECTS ? raw.counter : 1;
+  while (used.has(`shape-${result.counter}`)) result.counter++;
   return result;
 }
 
