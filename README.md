@@ -4,6 +4,10 @@ A polished, local-first **browser-based 3D modeling editor**. Build scenes from 
 
 **Status:** local vanilla Three.js prototype with automated Chromium/WebGL and export verification. Chrome/Chromium is the supported PR1 verification target; Firefox testing was waived by the owner. This is not a production release. React migration has not started. See [PR1 evidence](docs/browser-evidence.md).
 
+## Use the portable editor
+
+[Download the standalone HTML](https://github.com/pranavparuchur1/formforge-3d-studio/raw/refs/heads/main/download/formforge-studio.html), save it, and open it in Chrome. No Node installation is needed for this file. Export JSON backups of your projects. Regenerate the downloadable file with `npm run build` and copy `dist/index.html` to `download/formforge-studio.html` when publishing a new preview.
+
 ## Quick start
 
 Use Node.js 24.19.0 (the tested version) and npm 11.9.0:
