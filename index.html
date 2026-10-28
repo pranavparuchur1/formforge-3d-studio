@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101118" />
+  <meta name="description" content="FormForge is a beautifully simple, local-first browser 3D modeling studio." />
+  <title>FormForge — Your ideas, in every dimension</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+  <script type="importmap">
+  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <div class="app-shell" id="app">
+    <header class="topbar">
+      <div class="brand"><div class="brand-symbol"><span></span><span></span><span></span></div><span class="brand-word">form<span>forge</span></span><span class="brand-beta">BETA</span></div>
+      <div class="header-divider"></div>
+      <div class="project-header"><span class="project-kicker">WORKSPACE <span class="slash">/</span> PERSONAL</span><input id="project-name" aria-label="Project name" spellcheck="false" value="Studio study 01" /><span class="save-marker" id="save-marker" title="Saved locally">● Saved locally</span></div>
+      <div class="topbar-actions">
+        <button class="ghost-button" id="btn-new" title="New scene">＋ <span>New</span></button>
+        <button class="ghost-button" id="btn-import" title="Import a FormForge JSON project">↥ <span>Open</span></button>
+        <div class="export-wrap">
+          <button class="primary-button" id="btn-export" aria-expanded="false">↧ <span>Export</span> <span class="chevron">⌄</span></button>
+          <div class="export-menu hidden" id="export-menu">
+            <button data-export="glb"><span>◈</span><span><b>3D Model</b><small>GLB · Materials included</small></span></button>
+            <button data-export="stl"><span>⬡</span><span><b>3D Print Mesh</b><small>STL · Geometry only</small></span></button>
+            <button data-export="json"><span>▤</span><span><b>Project file</b><small>JSON · Editable later</small></span></button>
+            <button data-export="png"><span>▣</span><span><b>Viewport image</b><small>PNG · Current view</small></span></button>
+          </div>
+        </div>
+      </div>
+    </header>
+    <div class="editor-grid">
+      <aside class="left-panel">
+        <div class="panel-scroll">
+          <div class="panel-label">CREATE <span class="label-counter">01</span></div>
+          <h3 class="panel-heading">Add a shape</h3>
+          <div class="shapes-grid" id="shapes-grid">
+            <button class="shape-tile" data-shape="box"><span class="shape-icon cube">⬡</span><span>Cube</span><small>01</small></button>
+            <button class="shape-tile" data-shape="sphere"><span class="shape-icon sphere">●</span><span>Sphere</span><small>02</small></button>
+            <button class="shape-tile" data-shape="cylinder"><span class="shape-icon cylinder">▤</span><span>Cylinder</span><small>03</small></button>
+            <button class="shape-tile" data-shape="cone"><span class="shape-icon cone">▲</span><span>Cone</span><small>04</small></button>
+            <button class="shape-tile" data-shape="torus"><span class="shape-icon torus">◉</span><span>Torus</span><small>05</small></button>
+          </div>
+          <div class="section-divider"></div>
+          <div class="panel-label">STARTING POINTS <span class="label-counter">02</span></div>
+          <h3 class="panel-heading">Quick scenes</h3>
+          <div class="preset-list" id="presets-list">
+            <button class="preset" data-preset="podium"><span class="preset-icon">◇</span><span><strong>Product display</strong><small>4 simple forms</small></span><span class="preset-add">＋</span></button>
+            <button class="preset" data-preset="chair"><span class="preset-icon">▧</span><span><strong>Modern chair</strong><small>6 editable parts</small></span><span class="preset-add">＋</span></button>
+            <button class="preset" data-preset="lamp"><span class="preset-icon">♧</span><span><strong>Table lamp</strong><small>4 editable parts</small></span><span class="preset-add">＋</span></button>
+            <button class="preset" data-preset="rocket"><span class="preset-icon">✦</span><span><strong>Retro rocket</strong><small>6 editable parts</small></span><span class="preset-add">＋</span></button>
+            <button class="preset" data-preset="table"><span class="preset-icon">▱</span><span><strong>Side table</strong><small>5 editable parts</small></span><span class="preset-add">＋</span></button>
+          </div>
+          <div class="section-divider"></div>
+          <div class="layers-head"><div><div class="panel-label">SCENE OBJECTS <span class="label-counter">03</span></div><h3 class="panel-heading">Layers <span id="layer-count" class="layer-count">0</span></h3></div><button class="icon-button" id="btn-add-cube" aria-label="Add cube" title="Add cube">＋</button></div>
+          <div id="layers" class="layers"></div>
+        </div>
+        <div class="left-footer"><span class="online-dot"></span> LOCAL WORKSPACE <span class="footer-version">v0.1</span></div>
+      </aside>
+      <main class="main-panel">
+        <div class="viewport-topbar">
+          <div class="viewport-label"><span class="viewport-cube">◈</span> PERSPECTIVE VIEW <span class="viewport-sep">/</span><span id="object-count">0 OBJECTS</span></div>
+          <div class="view-actions"><button class="tool-button" id="btn-frame" title="Frame selection (F)">◎ <span>Focus</span></button><button class="tool-button" id="btn-reset-view" title="Reset camera">↺ <span>Reset view</span></button><button class="tool-button" id="btn-grid" title="Toggle grid">▦ <span>Grid</span></button></div>
+        </div>
+        <div class="viewport" id="viewport">
+          <div class="viewport-glow"></div>
+          <div class="viewport-placeholder" id="viewport-placeholder" aria-hidden="true">
+            <div class="placeholder-stage">
+              <div class="placeholder-shadow"></div>
+              <div class="placeholder-base"></div>
+              <div class="placeholder-platform"></div>
+              <div class="placeholder-ring"></div>
+              <div class="placeholder-orb"></div>
+            </div>
+          </div>
+          <div class="canvas-spotlight" id="canvas-spotlight"></div>
+          <div class="floating-toolbar" role="toolbar" aria-label="Transform mode"><button class="transform-mode active" data-mode="translate" title="Move (1)"><span>✥</span><small>Move</small></button><button class="transform-mode" data-mode="rotate" title="Rotate (2)"><span>↻</span><small>Rotate</small></button><button class="transform-mode" data-mode="scale" title="Scale (3)"><span>⤢</span><small>Scale</small></button><div class="tool-divider"></div><button class="transform-mode" id="btn-duplicate" title="Duplicate selected (Shift+D)"><span>▣</span><small>Clone</small></button><button class="transform-mode" id="btn-delete" title="Delete selected"><span>⌫</span><small>Delete</small></button></div>
+          <div class="axis-helper" aria-label="3D axes"><div class="axis-y">Y</div><div class="axis-small"><span class="axis-z">Z</span><span class="axis-x">X</span></div></div>
+          <div class="viewport-chips"><span class="viewport-chip"><i class="chip-dot"></i> LIVE 3D</span><span class="viewport-chip" id="renderer-state">WEBGL</span></div>
+          <div class="viewport-help">DRAG TO ORBIT <span>·</span> SCROLL TO ZOOM <span>·</span> RIGHT-DRAG TO PAN</div>
+          <div id="webgl-error" class="webgl-error hidden"><strong>3D couldn't initialize</strong><p>Enable WebGL and ensure your browser can load the Three.js modules from the CDN. Your project data is still saved locally.</p></div>
+        </div>
+        <div class="command-area">
+          <div class="command-title"><span class="command-sparkle">✦</span><span>QUICK BUILD</span><span class="command-badge">LOCAL PRESETS</span></div>
+          <div class="command-form"><div class="command-prompt">⌘</div><input id="quick-command" aria-label="Quick build command" placeholder="Try: Create a purple chair, or add a blue sphere..." autocomplete="off" /><button id="btn-quick-build">Generate <span>↗</span></button></div>
+          <div class="command-hint"><span>TIP: Understands shapes, furniture templates and 11 colors — no AI API required.</span><span>Press Enter ↵</span></div>
+        </div>
+        <div class="main-bottom"><span>◉ <span id="selection-footer">SELECT AN OBJECT TO EDIT</span></span><span>FORMFORGE 3D STUDIO <span class="dot-separator">·</span> BUILT FOR CREATORS</span></div>
+      </main>
+      <aside class="right-panel">
+        <div class="inspector-top"><div><span class="panel-label">PROPERTIES <span class="label-counter">04</span></span><h3>Inspector</h3></div><div class="inspector-icon">⚙</div></div>
+        <div class="inspector-scroll" id="inspector-scroll">
+          <div class="empty-inspector" id="inspector-empty"><div class="empty-illustration">◇</div><strong>Nothing selected yet</strong><p>Choose an object in the viewport or from your layers to start customizing.</p><span>✦ Your canvas, your rules</span></div>
+          <div id="inspector-editor" class="hidden">
+            <div class="selected-object-card"><div class="selected-icon" id="selected-type-icon">◈</div><div><span>SELECTED OBJECT</span><strong id="selected-type-name">Cube</strong></div><span class="selected-live">●</span></div>
+            <div class="inspector-section"><div class="control-label">OBJECT NAME</div><input class="wide-input" id="obj-name" maxlength="70" aria-label="Object name" /></div>
+            <div class="inspector-divider"></div>
+            <div class="inspector-section"><div class="section-heading"><span>01</span><strong>Transform</strong><span class="section-icon">✥</span></div><div class="property-title">POSITION <span>m</span></div><div class="number-group" id="transform-position"></div><div class="property-title">ROTATION <span>deg</span></div><div class="number-group" id="transform-rotation"></div><div class="property-title">SCALE <span>×</span></div><div class="number-group" id="transform-scale"></div></div>
+            <div class="inspector-divider"></div>
+            <div class="inspector-section"><div class="section-heading"><span>02</span><strong>Material</strong><span class="section-icon">◈</span></div><div class="property-title">BASE COLOR <span id="color-hex">#FFFFFF</span></div><div class="color-grid" id="colors"></div><div class="custom-color-row"><label for="custom-color">Custom color</label><input type="color" id="custom-color" aria-label="Custom material color" /></div><div class="property-title slider-title">METALLIC <span id="metal-value">0%</span></div><input class="slider" type="range" min="0" max="100" id="obj-metalness" /><div class="property-title slider-title">ROUGHNESS <span id="rough-value">0%</span></div><input class="slider" type="range" min="0" max="100" id="obj-roughness" /></div>
+            <div class="inspector-divider"></div>
+            <div class="inspector-section"><div class="section-heading"><span>03</span><strong>Actions</strong><span class="section-icon">⊞</span></div><div class="inspector-actions"><button id="inspector-duplicate">▣ Duplicate</button><button id="inspector-delete">⌫ Delete</button></div></div>
+          </div>
+        </div>
+        <div class="right-footer"><div>SHORTCUTS</div><span>1 Move · 2 Rotate · 3 Scale</span><span>⌘Z Undo · Shift+D Clone · F Frame</span><div class="history-actions"><button id="btn-undo" title="Undo">↶ Undo</button><button id="btn-redo" title="Redo">↷ Redo</button></div></div>
+      </aside>
+    </div>
+  </div>
+  <input type="file" id="file-input" accept=".json,application/json" class="hidden" />
+  <div role="status" aria-live="polite" id="toast" class="toast hidden"></div>
+  <script>
+    setTimeout(() => {
+      if (!window.__formforgeReady) {
+        document.getElementById('webgl-error').classList.remove('hidden');
+        document.getElementById('renderer-state').textContent = 'LOAD ERROR';
+      }
+    }, 12000);
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

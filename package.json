@@ -1,0 +1,13 @@
+{
+  "name": "formforge-3d-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An interactive browser-based 3D modeling studio with zero-install local server.",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/main.js && node --check src/scene-core.mjs"
+  }
+}
